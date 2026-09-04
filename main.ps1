@@ -54,6 +54,11 @@ function Draw-Divider {
     Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
 }
 
+function Wait-KeyPress {
+    Write-Host "`nPress Enter to return to the menu..." -ForegroundColor DarkGray
+    Read-Host | Out-Null
+}
+
 # ------------------------------------------------------------------------------
 # Diagnostic Scans
 # ------------------------------------------------------------------------------
@@ -218,7 +223,7 @@ function Menu-ScanAllAndRepair {
     Repair-BootRec
 
     Write-Host "`n[+] All tasks complete." -ForegroundColor Green
-    Pause
+    Wait-KeyPress
 }
 
 function Menu-CustomScans {
@@ -240,7 +245,7 @@ function Menu-CustomScans {
     if ($selection -match "3" -or $selection -eq "A") { Scan-OfflineServices }
     if ($selection -match "4" -or $selection -eq "A") { Scan-ComponentStoreHealth }
 
-    Pause
+    Wait-KeyPress
 }
 
 function Menu-CustomRepairs {
@@ -263,12 +268,14 @@ function Menu-CustomRepairs {
     if ($selection -match "4") { Repair-BootRec }
     if ($selection -match "5") { Repair-Directories }
 
-    Pause
+    Wait-KeyPress
 }
 
 # ------------------------------------------------------------------------------
 # Main Application Loop
 # ------------------------------------------------------------------------------
+$Global:IsRunning = $true
+
 do {
     Draw-Header
     Write-Host "   Diagnostic Options:" -ForegroundColor Yellow
@@ -286,6 +293,9 @@ do {
         "1" { Menu-ScanAllAndRepair }
         "2" { Menu-CustomScans }
         "3" { Menu-CustomRepairs }
-        "Q" { Clear-Host; break }
+        "Q" { 
+            Clear-Host
+            $Global:IsRunning = $false 
+        }
     }
-} while ($true)
+} while ($Global:IsRunning)
