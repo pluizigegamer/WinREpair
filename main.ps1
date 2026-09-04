@@ -1,5 +1,5 @@
 # ==============================================================================
-#  WinRE System Diagnostic & Repair Tool (PowerShell 7)
+#  WinREpair - WinRE System Diagnostic & Repair Tool (PowerShell 7)
 # ==============================================================================
 
 # Ensure ANSI colors are supported
@@ -20,6 +20,18 @@ function Get-TargetWindowsDrive {
 $Global:TargetDrive = Get-TargetWindowsDrive
 $Global:TargetWinDir = if ($Global:TargetDrive) { Join-Path $Global:TargetDrive "Windows" } else { $null }
 
+# Enforce working directory set to target OS Windows folder
+if ($Global:TargetWinDir -and (Test-Path $Global:TargetWinDir)) {
+    Set-Location -Path $Global:TargetWinDir
+}
+
+# Create a Scratch Directory on target drive to eliminate DISM memory warnings
+$Global:ScratchDir = if ($Global:TargetWinDir) {
+    $tempScratch = Join-Path $Global:TargetWinDir "Temp\DISMScratch"
+    if (-not (Test-Path $tempScratch)) { New-Item -Path $tempScratch -ItemType Directory -Force | Out-Null }
+    $tempScratch
+} else { $null }
+
 # ------------------------------------------------------------------------------
 # UI Helper Functions
 # ------------------------------------------------------------------------------
@@ -29,6 +41,7 @@ function Draw-Header {
     Write-Host "                        WinRE System Diagnostic Center                          " -ForegroundColor Cyan
     if ($Global:TargetDrive) {
         Write-Host "                Target OS Detected: $Global:TargetWinDir" -ForegroundColor DarkYellow
+        Write-Host "                Working Directory:  $((Get-Location).Path)" -ForegroundColor DarkGray
     } else {
         Write-Host "                [!] WARNING: Windows OS Drive Not Found!" -ForegroundColor Red
     }
@@ -118,27 +131,35 @@ function Scan-OfflineServices {
 }
 
 function Scan-ComponentStoreHealth {
-    Write-Host "`n[+] Checking DISM Component Store Health..." -ForegroundColor Cyan
+    Write-Host "`n[+] Checking DISM Component Store Health [dism.exe /Image /Cleanup-Image /CheckHealth]..." -ForegroundColor Cyan
     if (-not $Global:TargetDrive) { Write-Host "[-] OS Drive missing." -ForegroundColor Red; return }
 
-    dism.exe /Image:$Global:TargetDrive /Cleanup-Image /CheckHealth
+    if ($Global:ScratchDir) {
+        dism.exe /Image:$Global:TargetDrive /ScratchDir:$Global:ScratchDir /Cleanup-Image /CheckHealth
+    } else {
+        dism.exe /Image:$Global:TargetDrive /Cleanup-Image /CheckHealth
+    }
 }
 
 # ------------------------------------------------------------------------------
 # Repair Operations
 # ------------------------------------------------------------------------------
 function Repair-SFC {
-    Write-Host "`n[+] Executing Offline System File Checker (SFC)..." -ForegroundColor Yellow
+    Write-Host "`n[+] Running SFC Scan [sfc /scannow /offbootdir /offwindir]..." -ForegroundColor Yellow
     if (-not $Global:TargetDrive) { Write-Host "[-] OS Drive missing." -ForegroundColor Red; return }
 
     sfc.exe /scannow /offbootdir=$Global:TargetDrive /offwindir=$Global:TargetWinDir
 }
 
 function Repair-DISM {
-    Write-Host "`n[+] Executing Offline DISM RestoreHealth..." -ForegroundColor Yellow
+    Write-Host "`n[+] Running DISM RestoreHealth [dism.exe /Image /Cleanup-Image /RestoreHealth]..." -ForegroundColor Yellow
     if (-not $Global:TargetDrive) { Write-Host "[-] OS Drive missing." -ForegroundColor Red; return }
 
-    dism.exe /Image:$Global:TargetDrive /Cleanup-Image /RestoreHealth
+    if ($Global:ScratchDir) {
+        dism.exe /Image:$Global:TargetDrive /ScratchDir:$Global:ScratchDir /Cleanup-Image /RestoreHealth
+    } else {
+        dism.exe /Image:$Global:TargetDrive /Cleanup-Image /RestoreHealth
+    }
 }
 
 function Repair-Directories {
@@ -153,6 +174,27 @@ function Repair-Directories {
             Write-Host "  [REPAIRED] Created folder: $dir" -ForegroundColor Green
         }
     }
+}
+
+function Repair-Chkdsk {
+    Write-Host "`n[+] Running Disk Check [chkdsk /f /r]..." -ForegroundColor Yellow
+    if (-not $Global:TargetDrive) { Write-Host "[-] OS Drive missing." -ForegroundColor Red; return }
+
+    $driveLetter = $Global:TargetDrive.TrimEnd("\")
+    chkdsk.exe $driveLetter /f /r
+}
+
+function Repair-BootRec {
+    Write-Host "`n[+] Executing Boot Sector & MBR Repair [bootrec]..." -ForegroundColor Yellow
+    
+    Write-Host "Running bootrec /fixmbr..." -ForegroundColor Cyan
+    bootrec.exe /fixmbr
+    
+    Write-Host "Running bootrec /fixboot..." -ForegroundColor Cyan
+    bootrec.exe /fixboot
+    
+    Write-Host "Running bootrec /rebuildbcd..." -ForegroundColor Cyan
+    bootrec.exe /rebuildbcd
 }
 
 # ------------------------------------------------------------------------------
@@ -170,8 +212,10 @@ function Menu-ScanAllAndRepair {
     Draw-Divider
     Write-Host "Initiating Automated Repairs..." -ForegroundColor Yellow
     Repair-Directories
+    Repair-Chkdsk
     Repair-SFC
     Repair-DISM
+    Repair-BootRec
 
     Write-Host "`n[+] All tasks complete." -ForegroundColor Green
     Pause
@@ -184,7 +228,7 @@ function Menu-CustomScans {
     Write-Host "   [" -NoNewline; Write-Host "1" -ForegroundColor Green -NoNewline; Write-Host "] Core Files & System DLLs Scan"
     Write-Host "   [" -NoNewline; Write-Host "2" -ForegroundColor Green -NoNewline; Write-Host "] Directory Structure Scan"
     Write-Host "   [" -NoNewline; Write-Host "3" -ForegroundColor Green -NoNewline; Write-Host "] Offline Windows Services Check"
-    Write-Host "   [" -NoNewline; Write-Host "4" -ForegroundColor Green -NoNewline; Write-Host "] DISM Component Store Check"
+    Write-Host "   [" -NoNewline; Write-Host "4" -ForegroundColor Green -NoNewline; Write-Host "] DISM Component Store Check [dism.exe /Image /Cleanup-Image /CheckHealth]"
     Write-Host "   [" -NoNewline; Write-Host "A" -ForegroundColor Green -NoNewline; Write-Host "] Run All Selected Scans"
     Draw-Divider
 
@@ -203,9 +247,11 @@ function Menu-CustomRepairs {
     Draw-Header
     Write-Host "Select Repair Actions:" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "   [" -NoNewline; Write-Host "1" -ForegroundColor Green -NoNewline; Write-Host "] Run Offline SFC /scannow"
-    Write-Host "   [" -NoNewline; Write-Host "2" -ForegroundColor Green -NoNewline; Write-Host "] Run Offline DISM Component Store Repair"
-    Write-Host "   [" -NoNewline; Write-Host "3" -ForegroundColor Green -NoNewline; Write-Host "] Restore Missing Essential System Directories"
+    Write-Host "   [" -NoNewline; Write-Host "1" -ForegroundColor Green -NoNewline; Write-Host "] Run Offline SFC Scan [sfc /scannow /offbootdir /offwindir]"
+    Write-Host "   [" -NoNewline; Write-Host "2" -ForegroundColor Green -NoNewline; Write-Host "] Run Offline DISM Repair [dism.exe /Image /Cleanup-Image /RestoreHealth]"
+    Write-Host "   [" -NoNewline; Write-Host "3" -ForegroundColor Green -NoNewline; Write-Host "] Run Disk Check [chkdsk /f /r]"
+    Write-Host "   [" -NoNewline; Write-Host "4" -ForegroundColor Green -NoNewline; Write-Host "] Run Boot Repair [bootrec /fixmbr /fixboot /rebuildbcd]"
+    Write-Host "   [" -NoNewline; Write-Host "5" -ForegroundColor Green -NoNewline; Write-Host "] Restore Missing Essential System Directories"
     Draw-Divider
 
     $selection = Read-Host "Choose options to run (e.g. 1,3)"
@@ -213,7 +259,9 @@ function Menu-CustomRepairs {
 
     if ($selection -match "1") { Repair-SFC }
     if ($selection -match "2") { Repair-DISM }
-    if ($selection -match "3") { Repair-Directories }
+    if ($selection -match "3") { Repair-Chkdsk }
+    if ($selection -match "4") { Repair-BootRec }
+    if ($selection -match "5") { Repair-Directories }
 
     Pause
 }
