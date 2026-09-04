@@ -1,0 +1,22 @@
+DEFAULTDELAY 500
+STRING wpeinit
+ENTER
+DELAY 5000
+ENTER
+STRING netstat
+ENTER
+DELAY 1000
+STRING ping github.com
+ENTER
+DELAY 3000
+STRING C:\Windows\System32\curl.exe -L "https://github.com/PowerShell/PowerShell/releases/download/v7.4.2/PowerShell-7.4.2-win-x64.zip" -o X:\pwsh.zip
+ENTER
+DELAY 6000
+STRING mkdir X:\pwsh
+DELAY 1000
+ENTER
+STRING C:\Windows\System32\tar.exe -xf X:\pwsh.zip -C X:\pwsh
+ENTER
+DELAY 3000
+STRING X:\pwsh\pwsh.exe
+ENTER
