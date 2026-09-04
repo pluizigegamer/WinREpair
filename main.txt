@@ -1,3 +1,4 @@
+REM Created by PluizigeGamer on Github
 DEFAULTDELAY 500
 STRING wpeinit
 ENTER
