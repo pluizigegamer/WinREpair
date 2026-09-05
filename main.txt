@@ -2,10 +2,12 @@ DEFAULTDELAY 500
 STRING wpeinit
 ENTER
 DELAY 5000
-ENTER
 STRING netstat
 ENTER
 DELAY 1000
+STRING for /r "C:\Windows\System32\DriverStore\FileRepository" %i in (.inf) do drvload "%i". and that worked.
+ENTER
+DELAY 15000
 STRING ping github.com
 ENTER
 DELAY 3000
